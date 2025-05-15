@@ -92,18 +92,67 @@ const fetchGoogleTrends = async (keyword) => {
   });
 };
 
+const fetchWikidata = async (keyword) => {
+  try {
+    const response = await axios.get('https://www.wikidata.org/w/api.php', {
+      params: {
+        action: 'wbsearchentities',
+        search: keyword,
+        language: 'en',
+        format: 'json'
+      }
+    });
+    return response.data.search.map(entry => entry.label);
+  } catch (err) {
+    console.error('Wikidata error:', err.message);
+    return [];
+  }
+};
+
+const fetchStackExchange = async (keyword) => {
+  try {
+    const response = await axios.get('https://api.stackexchange.com/2.3/search/advanced', {
+      params: {
+        order: 'desc',
+        sort: 'votes',
+        q: keyword,
+        site: 'stackoverflow'
+      }
+    });
+    return response.data.items.map(q => q.title);
+  } catch (err) {
+    console.error('StackExchange error:', err.message);
+    return [];
+  }
+};
+
+const fetchExplodingTopics = async (keyword) => {
+  try {
+    const response = await axios.get(`https://trends.explodingtopics.com/api/search`, {
+      params: { q: keyword }
+    });
+    return response.data.terms?.map(t => t.name) || [];
+  } catch (err) {
+    console.error('Exploding Topics error:', err.message);
+    return [];
+  }
+};
+
 app.post('/keyword-insights', async (req, res) => {
   const { keyword } = req.body;
   if (!keyword) return res.status(400).json({ error: 'Keyword is required' });
 
   try {
-    const [googleSuggest, duckSuggest, redditTitles, youtubeSuggest, bingSuggest, trends] = await Promise.all([
+    const [googleSuggest, duckSuggest, redditTitles, youtubeSuggest, bingSuggest, trends, wikidata, stackexchange, explodingTopics] = await Promise.all([
       fetchGoogleSuggest(keyword),
       fetchDuckDuckGoSuggest(keyword),
       fetchRedditPosts(keyword),
       fetchYouTubeSuggest(keyword),
       fetchBingSuggest(keyword),
-      fetchGoogleTrends(keyword)
+      fetchGoogleTrends(keyword),
+      fetchWikidata(keyword),
+      fetchStackExchange(keyword),
+      fetchExplodingTopics(keyword)
     ]);
 
     const allSuggestions = [...new Set([
@@ -118,13 +167,19 @@ app.post('/keyword-insights', async (req, res) => {
       suggestions: allSuggestions,
       reddit_insights: redditTitles,
       trends,
+      wikidata,
+      stackexchange,
+      explodingTopics,
       source_count: {
         google: googleSuggest.length,
         duckduckgo: duckSuggest.length,
         youtube: youtubeSuggest.length,
         bing: bingSuggest.length,
         reddit: redditTitles.length,
-        trends: trends.length
+        trends: trends.length,
+        wikidata: wikidata.length,
+        stackexchange: stackexchange.length,
+        explodingTopics: explodingTopics.length
       }
     });
   } catch (err) {
