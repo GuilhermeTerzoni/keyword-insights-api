@@ -1,3 +1,4 @@
+// server.js
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -8,6 +9,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(bodyParser.json());
 
+// Google Suggest API
 const fetchGoogleSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://suggestqueries.google.com/complete/search', {
@@ -20,6 +22,7 @@ const fetchGoogleSuggest = async (keyword) => {
   }
 };
 
+// DuckDuckGo Suggestions
 const fetchDuckDuckGoSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://duckduckgo.com/ac/', {
@@ -32,6 +35,7 @@ const fetchDuckDuckGoSuggest = async (keyword) => {
   }
 };
 
+// Reddit (Pushshift API)
 const fetchRedditPosts = async (keyword) => {
   try {
     const response = await axios.get('https://api.pushshift.io/reddit/search/submission/', {
@@ -44,24 +48,63 @@ const fetchRedditPosts = async (keyword) => {
   }
 };
 
+// YouTube Suggest API
+const fetchYouTubeSuggest = async (keyword) => {
+  try {
+    const response = await axios.get('https://suggestqueries.google.com/complete/search', {
+      params: { client: 'youtube', ds: 'yt', q: keyword },
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    return response.data[1].map(item => item[0]);
+  } catch (err) {
+    console.error('YouTube Suggest error:', err.message);
+    return [];
+  }
+};
+
+// Bing Suggest API (unofficial)
+const fetchBingSuggest = async (keyword) => {
+  try {
+    const response = await axios.get('https://api.bing.com/qsonhs.aspx', {
+      params: { type: 'cb', q: keyword }
+    });
+    const suggestions = response.data.AS.Results?.[0]?.Suggests?.map(s => s.Txt) || [];
+    return suggestions;
+  } catch (err) {
+    console.error('Bing Suggest error:', err.message);
+    return [];
+  }
+};
+
 app.post('/keyword-insights', async (req, res) => {
   const { keyword } = req.body;
   if (!keyword) return res.status(400).json({ error: 'Keyword is required' });
 
   try {
-    const [googleSuggest, duckSuggest, redditTitles] = await Promise.all([
+    const [googleSuggest, duckSuggest, redditTitles, youtubeSuggest, bingSuggest] = await Promise.all([
       fetchGoogleSuggest(keyword),
       fetchDuckDuckGoSuggest(keyword),
-      fetchRedditPosts(keyword)
+      fetchRedditPosts(keyword),
+      fetchYouTubeSuggest(keyword),
+      fetchBingSuggest(keyword)
     ]);
+
+    const allSuggestions = [...new Set([
+      ...googleSuggest,
+      ...duckSuggest,
+      ...youtubeSuggest,
+      ...bingSuggest
+    ])];
 
     res.json({
       keyword,
-      suggestions: [...new Set([...googleSuggest, ...duckSuggest])],
+      suggestions: allSuggestions,
       reddit_insights: redditTitles,
       source_count: {
         google: googleSuggest.length,
         duckduckgo: duckSuggest.length,
+        youtube: youtubeSuggest.length,
+        bing: bingSuggest.length,
         reddit: redditTitles.length
       }
     });
