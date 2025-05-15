@@ -3,13 +3,13 @@ const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 const bodyParser = require('body-parser');
+const { exec } = require('child_process');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
 app.use(bodyParser.json());
 
-// Google Suggest API
 const fetchGoogleSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://suggestqueries.google.com/complete/search', {
@@ -22,7 +22,6 @@ const fetchGoogleSuggest = async (keyword) => {
   }
 };
 
-// DuckDuckGo Suggestions
 const fetchDuckDuckGoSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://duckduckgo.com/ac/', {
@@ -35,7 +34,6 @@ const fetchDuckDuckGoSuggest = async (keyword) => {
   }
 };
 
-// Reddit (Pushshift API)
 const fetchRedditPosts = async (keyword) => {
   try {
     const response = await axios.get('https://api.pushshift.io/reddit/search/submission/', {
@@ -48,7 +46,6 @@ const fetchRedditPosts = async (keyword) => {
   }
 };
 
-// YouTube Suggest API
 const fetchYouTubeSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://suggestqueries.google.com/complete/search', {
@@ -62,7 +59,6 @@ const fetchYouTubeSuggest = async (keyword) => {
   }
 };
 
-// Bing Suggest API (unofficial)
 const fetchBingSuggest = async (keyword) => {
   try {
     const response = await axios.get('https://api.bing.com/qsonhs.aspx', {
@@ -76,17 +72,38 @@ const fetchBingSuggest = async (keyword) => {
   }
 };
 
+const fetchGoogleTrends = async (keyword) => {
+  return new Promise((resolve, reject) => {
+    const encodedKeyword = encodeURIComponent(keyword);
+    const command = `python3 trends.py "${encodedKeyword}"`;
+    exec(command, (error, stdout, stderr) => {
+      if (error) {
+        console.error('Google Trends error:', error.message);
+        return resolve([]);
+      }
+      try {
+        const parsed = JSON.parse(stdout);
+        resolve(parsed);
+      } catch (parseErr) {
+        console.error('Trends parse error:', parseErr.message);
+        resolve([]);
+      }
+    });
+  });
+};
+
 app.post('/keyword-insights', async (req, res) => {
   const { keyword } = req.body;
   if (!keyword) return res.status(400).json({ error: 'Keyword is required' });
 
   try {
-    const [googleSuggest, duckSuggest, redditTitles, youtubeSuggest, bingSuggest] = await Promise.all([
+    const [googleSuggest, duckSuggest, redditTitles, youtubeSuggest, bingSuggest, trends] = await Promise.all([
       fetchGoogleSuggest(keyword),
       fetchDuckDuckGoSuggest(keyword),
       fetchRedditPosts(keyword),
       fetchYouTubeSuggest(keyword),
-      fetchBingSuggest(keyword)
+      fetchBingSuggest(keyword),
+      fetchGoogleTrends(keyword)
     ]);
 
     const allSuggestions = [...new Set([
@@ -100,12 +117,14 @@ app.post('/keyword-insights', async (req, res) => {
       keyword,
       suggestions: allSuggestions,
       reddit_insights: redditTitles,
+      trends,
       source_count: {
         google: googleSuggest.length,
         duckduckgo: duckSuggest.length,
         youtube: youtubeSuggest.length,
         bing: bingSuggest.length,
-        reddit: redditTitles.length
+        reddit: redditTitles.length,
+        trends: trends.length
       }
     });
   } catch (err) {
